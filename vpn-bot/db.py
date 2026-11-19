@@ -101,23 +101,30 @@ class Database:
         await self.db.commit()
         return cur.lastrowid or 0
 
+    async def run_rc(self, sql: str, args: tuple = ()) -> int:
+        """Выполняет запрос, возвращает число затронутых строк (для атомарных проверок)."""
+        cur = await self.db.execute(sql, args)
+        await self.db.commit()
+        return cur.rowcount or 0
+
     # ---------- Пользователи ----------
     async def get_user(self, telegram_id: int) -> Optional[Dict[str, Any]]:
         return await self._one("SELECT * FROM users WHERE telegram_id=?", (telegram_id,))
 
     async def get_or_create_user(self, telegram_id: int, username: str, full_name: str) -> Dict[str, Any]:
         user = await self.get_user(telegram_id)
-        if user:
-            if username != user["username"] or full_name != user["full_name"]:
-                await self.run("UPDATE users SET username=?, full_name=? WHERE telegram_id=?",
-                               (username, full_name, telegram_id))
-                user = await self.get_user(telegram_id)
-            return user
-        await self.run(
-            "INSERT INTO users(telegram_id, username, full_name, created_at) VALUES (?,?,?,?)",
-            (telegram_id, username, full_name, now_iso()),
-        )
-        return await self.get_user(telegram_id)
+        if user is None:
+            # INSERT OR IGNORE: при параллельных /start второй запрос просто перечитает строку
+            await self.run(
+                "INSERT OR IGNORE INTO users(telegram_id, username, full_name, created_at) VALUES (?,?,?,?)",
+                (telegram_id, username, full_name, now_iso()),
+            )
+            user = await self.get_user(telegram_id)
+        if user and (username != user["username"] or full_name != user["full_name"]):
+            await self.run("UPDATE users SET username=?, full_name=? WHERE telegram_id=?",
+                           (username, full_name, telegram_id))
+            user = await self.get_user(telegram_id)
+        return user
 
     async def set_referrer(self, telegram_id: int, referrer_id: int) -> bool:
         user = await self.get_user(telegram_id)
