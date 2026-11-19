@@ -29,6 +29,13 @@ async def main() -> None:
 
     await services.init()
 
+    nodes_info = ", ".join(f"{n.name} → {n.api_url}" for n in services.h1.nodes) or "—"
+    log.info("Ноды H1/VLESS: %s", nodes_info if services.h1.nodes else
+             "НЕ НАСТРОЕНЫ (нет валидной строки H1_NODES в .env)")
+    log.info("Админы (ADMIN_IDS): %s",
+             ", ".join(str(i) for i in config.ADMIN_IDS) if config.ADMIN_IDS
+             else "НЕ ЗАДАНЫ — админ-команды не работают!")
+
     bot = Bot(config.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
 
