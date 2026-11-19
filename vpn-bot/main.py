@@ -29,7 +29,7 @@ async def main() -> None:
 
     await services.init()
 
-    nodes_info = ", ".join(f"{n.name} → {n.api_url}" for n in services.h1.nodes) or "—"
+    nodes_info = ", ".join(f"{n.name} → {n.base_url}" for n in services.h1.nodes) or "—"
     log.info("Конфиг: .env %s, ключи: %s",
              "найден" if config.dotenv_status()["exists"] else "НЕ НАЙДЕН!",
              ", ".join(config.dotenv_status()["keys"]) or "—")
