@@ -184,13 +184,18 @@ async def grant_plan(bot: Bot, tg_id: int, plan_id: str, days: int, traffic_gb: 
 
 async def grant_trial(bot: Bot, tg_id: int) -> bool:
     user = await db.get_user(tg_id)
-    if not user or user["trial_used"]:
+    if not user:
         return False
     if await db.active_sub(tg_id):
         return False
     if not config.TRIAL_DAYS:
         return False
-    await db.run("UPDATE users SET trial_used=1 WHERE telegram_id=?", (tg_id,))
+    # атомарная заявка: только один параллельный запрос может забрать пробник
+    claimed = await db.run_rc(
+        "UPDATE users SET trial_used=1 WHERE telegram_id=? AND trial_used=0", (tg_id,)
+    )
+    if claimed == 0:
+        return False
     await grant_plan(bot, tg_id, "trial", config.TRIAL_DAYS, config.TRIAL_TRAFFIC_GB,
                      devices=config.TRIAL_DEVICES, notify=True, reason="trial")
     return True
@@ -199,7 +204,13 @@ async def grant_trial(bot: Bot, tg_id: int) -> bool:
 # ---------- активация платежей ----------
 async def activate_payment(bot: Bot, payment_db_id: int) -> bool:
     pay = await db.get_payment(payment_db_id)
-    if not pay or pay["activated"] or pay["status"] != "paid":
+    if not pay or pay["status"] != "paid":
+        return False
+    # атомарная заявка на активацию: вебхук и кнопка «Я оплатил» не сработают дважды
+    claimed = await db.run_rc(
+        "UPDATE payments SET activated=1 WHERE id=? AND activated=0", (payment_db_id,)
+    )
+    if claimed == 0:
         return False
     plan = config.get_plan(pay["plan_id"])
     if not plan:
@@ -207,7 +218,6 @@ async def activate_payment(bot: Bot, payment_db_id: int) -> bool:
         return False
 
     first_paid = await db.count_paid_by_user(pay["user_id"]) == 0
-    await db.mark_payment_activated(payment_db_id)
     await grant_plan(bot, pay["user_id"], plan["id"], plan["days"],
                      plan["traffic_gb"], plan.get("devices", 0))
 
